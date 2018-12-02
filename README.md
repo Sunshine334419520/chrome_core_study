@@ -11,16 +11,16 @@ Chrome是Google公司的浏览器产品，它基于chromium开源项目，一般
 ### 浏览器简述
 
 #### 浏览器内核
-浏览器内核当然就是浏览器最要的部分，浏览器最要或者说核心的部分是"Rednering Engine"(渲染引擎),这个渲染引擎就是浏览器的内核，它负责对网页的语法进行解释(如HTML，JavaScript)然后渲染并且显示出来，这个渲染引擎也就决定了如何显示网页的内容以及页面的格式以及页面的排榜.
-#### 浏览器内核分类
-比如trident(IE内核)、Gecko(Firefox内核)、Webkit(Safari内核，Chrome内核原型, 开源)、Blink(Chromium内核, 它是基于Webkit改造而来)
+浏览器内核当然就是浏览器最要的部分，浏览器最要或者说核心的部分是"Rednering Engine"(渲染引擎),这个渲染引擎就是浏览器的内核，它负责对网页的语法进行解释(如HTML，JavaScript)然后渲染并且显示出来，这个渲染引擎也就决定了如何显示网页的内容以及页面的格式以及页面的排榜.
+#### 浏览器内核分类
+比如trident(IE内核)、Gecko(Firefox内核)、Webkit(Safari内核，Chrome内核原型, 开源)、Blink(Chromium内核, 它是基于Webkit改造而来)
 
 ### Chromium多线程
-Chromium是一个基于多进程模型的架构设计,而且每个进程里面也有很多的线程，特别是主进程(Browser进程),其中Browser进程分为UI线程IO线程以及DB线程(数据库),FILE线程等，在这里只列出以上重要的线程， 为什么要搞这么多线程？chrome官方给出的解释是为了UI能够快速等响应，不被一些费时等操作影响了用户的体验，比如file读写，socket读写，数据库读写. 那么chrome是怎么管理这么多线程的呢？这个问题就是下面我要说的，chrome的线程消息通信机制.
+Chromium是一个基于多进程模型的架构设计,而且每个进程里面也有很多的线程，特别是主进程(Browser进程),其中Browser进程分为UI线程IO线程以及DB线程(数据库),FILE线程等，在这里只列出以上重要的线程， 为什么要搞这么多线程？chrome官方给出的解释是为了UI能够快速等响应，不被一些费时等操作影响了用户的体验，比如file读写，socket读写，数据库读写. 那么chrome是怎么管理这么多线程的呢？这个问题就是下面我要说的，chrome的线程消息通信机制.
 #### Chromium消息通信
 现在我不仅仅只是介绍Chromium线程之间的消息通信机制，主要是要深入Chromium源码，测地的了解Chromium是如何实现消息通信，首先我还是介绍一下Chromium的消息通信原理,Chromium每一个线程都会有一个MessageLoop,这个MessageLoop就是用来处理与自己绑定的线程的任务.
 #### CHromium多线程深度研究
-现在来看看Chromium源码中是如何定义一个基础的Thread(首先声明，整个的代码并不是直接copy Chromium源码，而是右我自己参考它实现的代码，相比Chromium更加清晰，去除了一些没有用的代码，并且都是采用C++11特性，由于Chromium内部实现了很大属于他自己的东西，比如Callback，Task)
+现在来看看Chromium源码中是如何定义一个基础的Thread(首先声明，整个的代码并不是直接copy Chromium源码，而是右我自己参考它实现的代码，相比Chromium更加清晰，去除了一些没有用的代码，并且都是采用C++11特性，由于Chromium内部实现了很大属于他自己的东西，比如Callback，Task)
 
 ```c++    
 class BASE_EXPORT Thread : PlatformThread::Delegate {
@@ -53,7 +53,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   RunLoop* run_loop_ = nullptr;
 };
 ```
-由上面的代码你明显可以看到Thread继承了PlatformThread::Delegate，带会我就会带大家去看看这个，并且在Thread类里面我们也明显的看到了MessageLoop这个消息循环，在之前我们说够每一个Chromium线程都会包含一个MessageLoop，现在看来是对的，但是现在我并不讨论这个消息循环，而是来看Start()函数，这个函数明显就是Chromium中每个线程的启动函数，现在看看这个函数里面做了什么
+由上面的代码你明显可以看到Thread继承了PlatformThread::Delegate, 呆会我就会带大家去看看这个，并且在Thread类里面我们也明显的看到了MessageLoop这个消息循环，在之前我们说够每一个Chromium线程都会包含一个MessageLoop，现在看来是对的，但是现在我并不讨论这个消息循环，而是来看Start()函数，这个函数明显就是Chromium中每个线程的启动函数,现在看看这个函数里面做了什么
 ```c++
 bool Thread::Start() {
 	Options options;
@@ -61,7 +61,7 @@ bool Thread::Start() {
 	return StartWithOptions(options);
 }
 ```
-我们发现这个Start函数啥都没干，只是定义了一个Options变量，然后调用了StartWithOptions，那么疑问又来了，Options是干嘛的，StartWithOptions是干嘛的，不要急我们来一个一个分析,首先来看看Option的定义
+我们发现这个Start函数啥都没干，只是定义了一个Options变量，然后调用了StartWithOptions，那么疑问又来了,Options是干嘛的,StartWithOptions是干嘛的，不要急我们来一个一个分析,首先来看看Option的定义
 
 ```c++
 struct BASE_EXPORT Options {
@@ -80,7 +80,7 @@ struct BASE_EXPORT Options {
     bool joinable = true;
 }; 
 ```
-这个Options也是非常的简单，主要保存了一些线程的信息，比如这个线程的消息循环处理类的Factory，和线程的stack size，以及线程的优先级，以及线程是否可以join. 那现在对于我们来说最重要的应该是StartWithOption, 来看代码
+这个Options也是非常的简单，主要保存了一些线程的信息，比如这个线程的消息循环处理类的Factory，和线程的stack size，以及线程的优先级，以及线程是否可以join.那现在对于我们来说最重要的应该是StartWithOption, 来看代码
 ```c++
 bool Thread::StartWithOptions(const Options & options) {
 
@@ -119,7 +119,7 @@ bool Thread::StartWithOptions(const Options & options) {
 	return true;
 }
 ```
-我们可以看到这个函数一开始会做大量的DCHECK，DCHECK其实也就是Debug模式下进行一系列的assert，只有里面的条件为true时，才能接着执行.比如一开始的DCHECK(!message_loop_)意味者message_loop_必须为NULL，然后就是对options进行赋值，比如消息类型..., 之后创建了一个MessageLoop，这个MessageLoop我们之后会深入的讨论，现在我们只需要知道在开始线程之前，为这个线程创建了一个属于它的消息循环，之后重要的函数CreateWithPriority, CreateNonJoinableWithPriority(从函数名就可以看出这个函数是创建一个detch线程),在发现joinable为true时会调用CreateWithPriority().那么现在我们来看看CreateWithPriority函数
+我们可以看到这个函数一开始会做大量的DCHECK，DCHECK其实也就是Debug模式下进行一系列的assert，只有里面的条件为true时，才能接着执行.比如一开始的DCHECK(!message_loop_)意味者message_loop_必须为NULL，然后就是对options进行赋值,比如消息类型..., 之后创建了一个MessageLoop，这个MessageLoop我们之后会深入的讨论，现在我们只需要知道在开始线程之前，为这个线程创建了一个属于它的消息循环，之后重要的函数CreateWithPriority, CreateNonJoinableWithPriority(从函数名就可以看出这个函数是创建一个detch线程),在发现joinable为true时会调用CreateWithPriority().那么现在我们来看看CreateWithPriority函数
 ```c++
 std::thread 
 PlatformThread::CreateWithPriority(size_t stack_size, 
@@ -129,7 +129,7 @@ PlatformThread::CreateWithPriority(size_t stack_size,
 					 delegate, priority));
 }
 ```
-这个函数非常简单，只是调用CreateThread.
+这个函数非常简单,只是调用CreateThread.
 ```c++
 std::thread CreateThread(size_t stack_size,
                          bool joinable,
