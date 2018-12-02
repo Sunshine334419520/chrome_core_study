@@ -32,9 +32,9 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // 停止线程.
   void Stop();
   
-  // 省略大量代码...
+  // 省略大量代码...
  private:
-  // 省略大量代码...
+  // 省略大量代码...
 
   // PlatformThread::Delegate methods:
   void ThreadMain() override;
@@ -45,7 +45,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // The thread's id once it has started.
   PlatformThreadId id_ = kInvalidThreadId;
 
-  // 省略大量代码...
+  // 省略大量代码...
 
   // The thread's MessageLoop and RunLoop. Valid only while the thread is alive.
   // Set by the created thread.
@@ -71,7 +71,7 @@ struct BASE_EXPORT Options {
     // 这个参数保存者真正做消息循环处理的地方.	 
     MessagePumpFactory message_pump_factory;
 
-    // 线程stack大小
+    // 线程stack大小
     size_t stack_size = 0;
 
     // 线程的优先级
@@ -99,7 +99,7 @@ bool Thread::StartWithOptions(const Options & options) {
 	message_loop_timer_slack_ = options.timer_slack;
 	std::unique_ptr<MessageLoop> message_loop_owned =
 		MessageLoop::CreateUnbound(type, options.message_pump_factory);
-	message_loop_ = message_loop_owned.get();*/
+	message_loop_ = message_loop_owned.get();
 
 	{
 		std::lock_guard<std::mutex> lock(thread_mutex_);
@@ -119,7 +119,7 @@ bool Thread::StartWithOptions(const Options & options) {
 	return true;
 }
 ```
-我们可以看到这个函数一开始会做大量的DCHECK，DCHECK其实也就是Debug模式下进行一系列的assert，只有里面的条件为true时，才能接着执行.比如一开始的DCHECK(!message_loop_)意味者message_loop_必须为NULL，然后就是对options进行赋值,比如消息类型..., 之后创建了一个MessageLoop，这个MessageLoop我们之后会深入的讨论，现在我们只需要知道在开始线程之前，为这个线程创建了一个属于它的消息循环，之后重要的函数CreateWithPriority, CreateNonJoinableWithPriority(从函数名就可以看出这个函数是创建一个detch线程),在发现joinable为true时会调用CreateWithPriority().那么现在我们来看看CreateWithPriority函数
+我们可以看到这个函数一开始会做大量的DCHECK，DCHECK其实也就是Debug模式下进行一系列的assert，只有里面的条件为true时，才能接着执行.比如一开始的DCHECK(!message_loop_)意味者message_loop_必须为NULL，然后就是对options进行赋值,比如消息类型..., 之后创建了一个MessageLoop，这个MessageLoop我们之后会深入的讨论，现在我们只需要知道在开始线程之前，为这个线程创建了一个属于它的消息循环，之后重要的函数CreateWithPriority, CreateNonJoinableWithPriority(从函数名就可以看出这个函数是创建一个detch线程),在发现joinable为true时会调用CreateWithPriority().那么现在我们来看看CreateWithPriority函数
 ```c++
 std::thread 
 PlatformThread::CreateWithPriority(size_t stack_size, 
