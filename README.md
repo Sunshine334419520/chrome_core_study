@@ -22,6 +22,64 @@ Chromium是一个基于多进程模型的架构设计,而且每个进程里面�
 #### CHromium多线程深度研究
 现在来看看Chromium源码中是如何定义一个基础的Thread(首先声明,整个的代码并不是直接copy Chromium源码，而是右我自己参考它实现的代码，相比Chromium更加清晰，去除了一些没有用的代码，并且都是采用C++11特性，由于Chromium内部实现了很大属于他自己的东西，比如Callback，Task)
 
+首先来看chromium多线程的启动过程，从下图可一看到, 这个启动流程从BrowserThread 开始,所有的Browser进程里面的线程都是基于这个BrwoserThread类实现或者重定义的.接下来我会按照下图的流程一个一个函数的进行分析.
+##### chromium thread 启动流程
+
+![Markdown](https://farm5.staticflickr.com/4635/38472981725_c895433e0b_b.jpghttps://farm5.staticflickr.com/4848/39745484663_5b4f1d2dd8_k.jpg)
+
+先来看看BrowserThread类的定义
+
+```c++
+class BrowserThread : public Thread {
+ public:
+	// ......
+	bool Start() override;
+	bool StartWithOptions(const Options& options) override;
+	// ......
+}
+```
+从BrowserThread类的定义可以看出它继承了Thread类并且重写了Start和StartWithOptions这两个方法. 下面看Start 和 StartWithOptions的实现
+
+```c++ 
+bool BrowserThread::Start() {
+	// ......
+	Options options;
+	return StartWithOptions(options);
+}
+```
+
+这个Start函数几乎什么都没有干，只是定义了一个Options结构然后调用了StartWithOptions.先来看看Options结构
+
+```c++
+struct BASE_EXPORT Options {
+    typedef std::function<std::unique_ptr<
+        MessagePump>()> MessagePumpFactory;
+    Options();
+    // 这个参数保存者真正做消息循环处理的地方.	 
+    MessagePumpFactory message_pump_factory;
+
+    // 线程stack大小
+    size_t stack_size = 0;
+
+    // 线程的优先级
+    ThreadPriority priority = ThreadPriority::NORMAL;
+
+    bool joinable = true;
+}; 
+```
+
+这个Options也是非常的简单，主要保存了一些线程的信息，比如这个线程的消息循环处理类的Factory，和线程的stack size,以及线程的优先级，以及线程是否可以join.那现在对于我们来说最重要的应该是StartWithOption, 来看代码
+
+```c++
+bool BrowserThread::StartWithOptions(const Options& options) {
+	// ......
+	return Thread::StartWithOptions(options);
+}
+```
+
+这个StartWithOption调用了Thread的StartWithOptions, Thread的定义再下面.
+
+
 ```c++    
 class BASE_EXPORT Thread : PlatformThread::Delegate {
  public:
@@ -53,34 +111,9 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   RunLoop* run_loop_ = nullptr;
 };
 ```
-由上面的代码你明显可以看到Thread继承了PlatformThread::Delegate, 呆会我就会带大家去看看这个，并且在Thread类里面我们也明显的看到了MessageLoop这个消息循环，在之前我们说够每一个Chromium线程都会包含一个MessageLoop，现在看来是对的，但是现在我并不讨论这个消息循环，而是来看Start()函数，这个函数明显就是Chromium中每个线程的启动函数,现在看看这个函数里面做了什么
-```c++
-bool Thread::Start() {
-	Options options;
 
-	return StartWithOptions(options);
-}
-```
-我们发现这个Start函数啥都没干，只是定义了一个Options变量，然后调用了StartWithOptions,那么疑问又来了,Options是干嘛的,StartWithOptions是干嘛的，不要急我们来一个一个分析,首先来看看Option的定义
+由上面的代码你明显可以看到Thread继承了PlatformThread::Delegate, 呆会我就会带大家去看看这个，并且在Thread类里面我们也明显的看到了MessageLoop这个消息循环，在之前我们说够每一个Chromium线程都会包含一个MessageLoop，现在看来是对的，但是现在我并不讨论这个消息循环，而是来看StartWithOptions函数，这个函数明显就是Chromium中每个线程的启动函数,现在看看这个函数里面做了什么
 
-```c++
-struct BASE_EXPORT Options {
-    typedef std::function<std::unique_ptr<
-        MessagePump>()> MessagePumpFactory;
-    Options();
-    // 这个参数保存者真正做消息循环处理的地方.	 
-    MessagePumpFactory message_pump_factory;
-
-    // 线程stack大小
-    size_t stack_size = 0;
-
-    // 线程的优先级
-    ThreadPriority priority = ThreadPriority::NORMAL;
-
-    bool joinable = true;
-}; 
-```
-这个Options也是非常的简单，主要保存了一些线程的信息，比如这个线程的消息循环处理类的Factory，和线程的stack size,以及线程的优先级，以及线程是否可以join.那现在对于我们来说最重要的应该是StartWithOption, 来看代码
 ```c++
 bool Thread::StartWithOptions(const Options & options) {
 
@@ -147,3 +180,111 @@ std::thread CreateThread(size_t stack_size,
 	return std::move(th);
 }
 ```
+
+这个函数就是最重要的部分了，首先创建了一个params，然后给这个params里面的参数赋值
+
+```c++
+struct ThreadParams {
+	ThreadParams()
+		: delegate(nullptr),
+		  joinable(false),
+		  priority(ThreadPriority::NORMAL) {}
+		
+	PlatformThread::Delegate* delegate;
+	bool joinable;
+	ThreadPriority priority;
+};
+```
+
+ThreadParams结构保存着需要传递给thread的参数,其中最重要的是delegate,在Thread类的StartWithOptions函数调用的时候将this传递给了delegate，那现在这个delegate就是指向Thread类的一个指针. 接着上面的CreateThread函数说，在初始化params之后就创建了一个线程(线程函数ThreadFunc， 线程参数params.get())
+
+```c++
+void* ThreadFunc(void* params) {
+	PlatformThread::Delegate* delegate = nullptr;
+
+	{
+		std::unique_ptr<ThreadParams> thread_params(
+			static_cast<ThreadParams*>(params));
+
+		delegate = thread_params->delegate;
+	}
+	
+	delegate->ThreadMain();
+
+	return nullptr;
+}
+```
+
+可以看到ThreadFunc仅仅只是调用了一下delegate->ThreadMain()，之前有分析过，这个delegate其实就是指向Thread的，来看一下Thread::ThreadMain()
+
+```c++
+void Thread::ThreadMain() {
+	// .......
+	RunLoop run_loop;
+	run_loop_ = &run_loop;
+	Run(run_loop_);
+
+	// .......
+}
+```
+
+这个ThradMain会先创建一个RunLoop，这个RunLoop其实是一个帮助类，专门帮助chromium thread 运行消息循环的类, 然后调用了Run()函数
+
+```c++
+void Thread::Run(RunLoop * run_loop) {
+	// ......
+	run_loop_->Run();
+}
+```
+```c++
+void RunLoop::Run() {
+	// ......
+
+	const bool application_tasks_allowed =
+		delegate_->active_run_loops_.size() == 1U ||
+		type_ == Type::kNestableTasksAllowed;
+	delegate_->Run(application_tasks_allowed);
+
+	// ......
+}
+```
+
+从之前的图中就可以看导这个delegate_->Run() 调用的是Run::Delegate::Run, 这个delegate是一个多态，由于MessageLoop(这个在之后讲消息循环的时候仔细讲)继承了Run::Delegate，并且重写了Run方法
+所以最终这个delegate_->Run是调用到MessageLoop->Run函数，这个MessageLoop就是消息循环类, 每一个线程都回有一个消息循环，这个MessageLoop就是来管理线程中的每一个消息与事件, 在MessageLoop的Run方法中又调用了MessageLoopDefault的Run方法，所以最终走到了MessageLoopDefault::Run
+
+```c++
+void MessagePumpDefault::Run(Delegate* delegate) {
+	for (;;) {
+		bool did_work = delegate->DoWork();
+		if (!keep_running_)
+			break;
+
+		did_work |= delegate->DoDelayedWork(delayed_work_time_);
+		if (!keep_running_)
+			break;
+
+		if (did_work)
+			// 作了延迟任务或者work.
+			continue;
+
+		// 没有做工作，就去做闲置的工作
+		did_work = delegate->DoIdleWork();
+		if (!keep_running_)
+			break;
+
+		// 做了闲置工作，contiune.
+		if (did_work)
+			continue;
+
+		// ......
+	}
+}
+```
+
+走到这里整个chromium thread的启动大概流程就已成完成了，之后就会在这个for循环里无限的等待任务传来，然后处理任务.
+
+##### chromium thread message loop 研究
+
+
+
+
